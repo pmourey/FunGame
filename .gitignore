@@ -6,8 +6,6 @@ __pycache__/
 /backend/tests/
 
 # Node / frontend
-node_modules/
-dist/
 frontend/dist/
 frontend/node_modules/
 

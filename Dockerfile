@@ -1,36 +1,71 @@
-# Multi-stage build: build frontend with Node then build a Python image that serves the Flask backend
+# Multi-stage Dockerfile adapted from GameArena style
 
-# 1) Frontend build stage
-FROM node:18-alpine AS frontend-builder
-WORKDIR /build/frontend
-# Install dependencies first (use package-lock when present)
-COPY frontend/package.json frontend/package-lock.json* ./
-RUN npm ci --silent
-COPY frontend/ .
+# ============================================
+# Stage 1: Build frontend (Node.js)
+# ============================================
+FROM node:18-bullseye-slim AS frontend-builder
+
+WORKDIR /app/frontend
+
+# Copy package files and install dependencies reproducibly
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci --no-audit --no-fund --silent
+
+# Copy frontend sources and build
+COPY frontend/ ./
+ARG VITE_API_BASE=""
+ENV VITE_API_BASE=${VITE_API_BASE}
 RUN npm run build --silent
 
-# 2) Backend final image
-FROM python:3.12-slim
-ENV PYTHONUNBUFFERED=1
+# ============================================
+# Stage 2: Python runtime
+# ============================================
+FROM python:3.11-slim
+
+LABEL maintainer="FunGame Team"
+LABEL description="FunGame - Flask + React + PixiJS"
+LABEL version="1.0.0"
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    FLASK_ENV=production \
+    PORT=5000
+
 WORKDIR /app
 
-# System deps (if any are required by packages, keep minimal)
+# Install minimal system dependencies
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends build-essential curl ca-certificates \
+    && apt-get install -y --no-install-recommends curl gcc ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements and install (project has requirements.txt at repo root)
+# Copy and install Python requirements
 COPY requirements.txt ./requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy backend sources (files are at repo root)
-COPY ./. ./
+# Create a non-root user for running the app
+RUN useradd -m -u 1000 fungame || true && mkdir -p /app && chown -R fungame:fungame /app
 
-# Copy built frontend into project frontend/dist so Flask (which expects repo_root/frontend/dist) can serve it
-COPY --from=frontend-builder /build/frontend/dist/ ./frontend/dist/
+# Copy application sources into the image and set ownership
+# Use --chown so files are owned by the non-root user
+COPY --chown=fungame:fungame ./. ./
 
-# Expose port used by Flask app
+# Copier le frontend buildé depuis le stage 1
+COPY --from=frontend-builder --chown=fungame:fungame /app/frontend/dist ./static
+
+# Copy built frontend from builder into ./frontend/dist so app can serve it
+# COPY --from=frontend-builder --chown=fungame:fungame /app/frontend/dist/ ./frontend/dist/
+
+# Create runtime directories with proper ownership
+RUN mkdir -p /app/logs && chown -R fungame:fungame /app/logs
+
+# Switch to non-root user
+USER fungame
+
 EXPOSE 5000
 
-# Run the Flask app (app.py at repo root is the entrypoint)
-CMD ["python", "app.py"]
+# Healthcheck (runs as container user; use curl if installed)
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD curl -f http://127.0.0.1:5000/api || exit 1
+
+# Start the application
+CMD ["python3", "app.py"]

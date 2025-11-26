@@ -1,10 +1,24 @@
 from flask import Blueprint, request, jsonify
-import uuid
 
 from game.state import GameStore
 from models import random_name
 
 api_bp = Blueprint('api', __name__)
+
+
+@api_bp.route('', methods=['GET'])
+@api_bp.route('/', methods=['GET'])
+def api_index():
+    """Root of the API (mounted at /api). Returns minimal info so healthchecks can succeed."""
+    return jsonify({
+        'status': 'ok',
+        'api_prefix': '/api',
+        'endpoints': [
+            '/api/games [GET,POST]',
+            '/api/games/<game_id>/join [POST]',
+            '/api/games/<game_id>/state [GET]'
+        ]
+    }), 200
 
 
 @api_bp.route('/games', methods=['POST'])

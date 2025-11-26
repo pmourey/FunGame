@@ -2,10 +2,7 @@ from flask_socketio import emit, join_room, leave_room
 from flask import request
 
 # support both package-relative and top-level imports
-try:
-    from .game.state import GameStore
-except Exception:
-    from game.state import GameStore
+from game.state import GameStore
 
 
 # mapping of websocket session id to (game_id, player_id)
