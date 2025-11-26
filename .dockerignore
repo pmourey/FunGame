@@ -1,0 +1,17 @@
+# Ignore Python cache and venvs
+__pycache__/
+*.pyc
+.venv/
+.vscode/
+
+# Node modules and build artifacts
+frontend/node_modules/
+frontend/dist/
+
+# Git artifacts
+.git
+.gitignore
+
+# Logs
+logs/
+

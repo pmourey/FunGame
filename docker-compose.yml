@@ -1,0 +1,15 @@
+version: '3.8'
+
+services:
+  fungame:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    environment:
+      - FLASK_ENV=production
+    volumes:
+      - ./backend/logs:/app/backend/logs:rw
+      - ./frontend/dist:/app/frontend/dist:ro
