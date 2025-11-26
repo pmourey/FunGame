@@ -54,4 +54,4 @@ if __name__ == '__main__':
     socketio = SocketIO(app, cors_allowed_origins='*', async_mode='threading')
     register_socketio_handlers(socketio)
     # run with socketio.run for proper handling
-    socketio.run(app, host='0.0.0.0', port=5000)
+    socketio.run(app, host='0.0.0.0', port=5000, allow_unsafe_werkzeug=True)
