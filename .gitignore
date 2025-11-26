@@ -10,3 +10,11 @@ node_modules/
 dist/
 frontend/dist/
 frontend/node_modules/
+
+# Allow test mocks to be tracked (explicit exception)
+!frontend/src/__mocks__/
+!frontend/src/__mocks__/**
+__pycache__/
+*.pyc
+__pycache__/
+*.pyc
