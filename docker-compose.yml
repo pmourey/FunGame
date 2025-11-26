@@ -5,11 +5,24 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    image: fungame:latest
     restart: unless-stopped
-    ports:
-      - "5000:5000"
     environment:
       - FLASK_ENV=production
+      - PORT=5000
+      - PNA_ALLOWED_ORIGINS=http://philippe.mourey.com:60000,https://philippe.mourey.com:60000
+    ports:
+      - "5000:5000"
     volumes:
-      - ./backend/logs:/app/backend/logs:rw
+      - ./logs:/app/logs:rw
       - ./frontend/dist:/app/frontend/dist:ro
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://127.0.0.1:5000/api || exit 1"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+
+networks:
+  default:
+    name: fungame_net

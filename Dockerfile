@@ -53,7 +53,7 @@ COPY --chown=fungame:fungame ./. ./
 COPY --from=frontend-builder --chown=fungame:fungame /app/frontend/dist ./static
 
 # Copy built frontend from builder into ./frontend/dist so app can serve it
-# COPY --from=frontend-builder --chown=fungame:fungame /app/frontend/dist/ ./frontend/dist/
+COPY --from=frontend-builder --chown=fungame:fungame /app/frontend/dist/ ./frontend/dist/
 
 # Create runtime directories with proper ownership
 RUN mkdir -p /app/logs && chown -R fungame:fungame /app/logs
@@ -65,7 +65,7 @@ EXPOSE 5000
 
 # Healthcheck (runs as container user; use curl if installed)
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD curl -f http://127.0.0.1:5000/api || exit 1
+  CMD ["sh", "-c", "curl -f http://127.0.0.1:5000/api || exit 1"]
 
 # Start the application
-CMD ["python3", "app.py"]
+CMD ["gunicorn", "-k", "eventlet", "-w", "1", "--bind", "0.0.0.0:5000", "wsgi:app"]

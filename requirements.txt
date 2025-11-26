@@ -5,3 +5,4 @@ python-dotenv==1.0.0
 pytest==7.4.0
 Flask-Cors==1.0.0
 Werkzeug==2.2.3
+gunicorn==23.0.0

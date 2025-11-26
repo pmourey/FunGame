@@ -19,17 +19,23 @@ def register_socketio_handlers(socketio):
         emit('connected', {'msg': 'connected', 'sid': sid, 'remote_addr': addr})
 
     @socketio.on('join')
-    def on_join(data):
+    def on_join(data, ack=None):
         # expected data: { gameId, playerId }
         data = data or {}
         game_id = data.get('gameId')
         player_id = data.get('playerId')
         if not game_id or not player_id:
             emit('error', {'message': 'gameId and playerId required'})
+            if callable(ack):
+                try: ack({'error': 'gameId and playerId required'})
+                except Exception: pass
             return
         game = GameStore.get_game(game_id)
         if not game:
             emit('error', {'message': 'game not found'})
+            if callable(ack):
+                try: ack({'error': 'game not found'})
+                except Exception: pass
             return
         # join socket.io room
         # prevent multiple simultaneous connections for the same player id
@@ -39,6 +45,9 @@ def register_socketio_handlers(socketio):
             player_obj = None
         if player_obj and getattr(player_obj, 'is_connected', False):
             emit('error', {'message': 'player already connected'})
+            if callable(ack):
+                try: ack({'error': 'player already connected'})
+                except Exception: pass
             return
         # join socket.io room
         join_room(game_id)
@@ -58,11 +67,18 @@ def register_socketio_handlers(socketio):
         except Exception:
             player_name = None
         if sid:
-            emit('joined', {'gameId': game_id, 'playerId': player_id, 'name': player_name}, room=sid)
+            emit('joined', {'gameId': game_id, 'playerId': player_id, 'name': player_name}, to=sid)
         else:
             emit('joined', {'gameId': game_id, 'playerId': player_id, 'name': player_name})
         # send initial state update to all in the room
-        emit('state_update', game.to_dict(), room=game_id)
+        print(f"emitting state_update to game {game_id} players")
+        emit('state_update', game.to_dict(), to=game_id)
+        # ack success to caller if they provided a callback
+        if callable(ack):
+            try:
+                ack({'ok': True})
+            except Exception:
+                pass
 
     @socketio.on('start_game')
     def on_start(data):
@@ -79,7 +95,8 @@ def register_socketio_handlers(socketio):
             emit('error', {'message': 'game already started or finished'})
             return
         game.start()
-        emit('game_started', game.to_dict(), room=game_id)
+        print(f"game {game_id} started, broadcasting")
+        emit('game_started', game.to_dict(), to=game_id)
 
     @socketio.on('action')
     def on_action(data):
@@ -100,8 +117,9 @@ def register_socketio_handlers(socketio):
             return
         result = game.process_action(player_id, action)
         # broadcast action result and full state snapshot
-        emit('action_result', result, room=game_id)
-        emit('state_update', game.to_dict(), room=game_id)
+        print(f"action by {player_id} in game {game_id}: {action}, result: {result}")
+        emit('action_result', result, to=game_id)
+        emit('state_update', game.to_dict(), to=game_id)
 
     @socketio.on('disconnect')
     def on_disconnect():
@@ -125,7 +143,7 @@ def register_socketio_handlers(socketio):
                 game = GameStore.get_game(game_id)
                 if game:
                     game.set_player_connected(player_id, False)
-                    emit('player_disconnected', {'playerId': player_id}, room=game_id)
+                    emit('player_disconnected', {'playerId': player_id}, to=game_id)
 
     # optional: allow explicit leave
     @socketio.on('leave')
@@ -143,4 +161,4 @@ def register_socketio_handlers(socketio):
         game = GameStore.get_game(game_id)
         if game:
             game.set_player_connected(player_id, False)
-            emit('player_left', {'playerId': player_id}, room=game_id)
+            emit('player_left', {'playerId': player_id}, to=game_id)

@@ -1,71 +1,68 @@
-Development README for FunGame backend
+# FunGame — Démarrage production simplifié
 
-To run the backend server (development):
+Ce dépôt contient une petite application Flask + Socket.IO (frontend en React/Pixi). Cette version fournit une configuration simplifiée pour démarrer le backend directement (sans `nginx`) en production locale.
 
-1. Create virtualenv and activate
+Fichiers importants
+- `docker-compose.yml` — compose minimal exposant le service `fungame` sur le port 5000.
+- `start_prod.sh` — script de démarrage simple pour builder (optionnel) et démarrer `fungame`.
+- `Makefile` — cibles pratiques : `make start-prod`, `make stop`, `make logs`, `make ps`, `make build`.
+- `tools/run_client.py` — client Python de test Socket.IO (optionnel).
 
-```bash
-python -m venv .venv
-source .venv/bin/activate
-```
+Démarrage rapide (local)
+1) Assurez-vous que Docker est installé et fonctionnel.
 
-2. Install dependencies
-
-```bash
-pip install -r requirements.txt
-```
-
-3. Run server
+2) Démarrage (recommandé - rebuild) :
 
 ```bash
-python app.py
+# depuis la racine du projet
+./start_prod.sh
+# ou via Makefile
+make start-prod
 ```
 
-The server will start on port 5000 and support Socket.IO connections.
-
-Quick REST smoke tests
-
-Create a game:
+3) Démarrage rapide sans rebuild (utile si l'image a déjà été construite) :
 
 ```bash
-curl -X POST http://localhost:5000/api/games -H "Content-Type: application/json" -d '{"name":"QuickGame","maxPlayers":2}'
+NO_BUILD=1 ./start_prod.sh
 ```
 
-Join a game (replace <gameId>):
+4) Vérifier que l'API répond :
 
 ```bash
-curl -X POST http://localhost:5000/api/games/<gameId>/join -H "Content-Type: application/json" -d '{"playerName":"Alice"}'
+curl -i http://localhost:5000/api
 ```
 
-Get game state:
+Tests et debug
+- Suivre les logs :
 
 ```bash
-curl http://localhost:5000/api/games/<gameId>/state
+docker compose logs -f fungame
 ```
 
-Quick Socket.IO test (node):
-
-Create a quick `test-socket.js`:
-
-```js
-const io = require('socket.io-client');
-const socket = io('http://localhost:5000');
-
-socket.on('connect', () => {
-  console.log('connected', socket.id);
-  socket.emit('join', { gameId: '<gameId>', playerId: '<playerId>' });
-});
-
-socket.on('joined', data => console.log('joined', data));
-socket.on('state_update', s => console.log('state:', s));
-```
-
-Run:
+- Créer une partie (exemple) :
 
 ```bash
-node test-socket.js
+curl -X POST -H "Content-Type: application/json" -d '{"name":"Test","maxPlayers":4}' http://localhost:5000/api/games
 ```
 
-Notes
-- The server currently stores game state in memory (GameStore). For production or multi-process scaling use Redis and Flask-SocketIO message_queue.
-- The server is authoritative: clients submit 'action' events and receive 'state_update' broadcasts.
+- Rejoindre via REST (remplacer `<gameId>`) :
+
+```bash
+curl -X POST -H "Content-Type: application/json" -d '{}' http://localhost:5000/api/games/<gameId>/join
+```
+
+- Test Socket.IO (client Python) :
+  - Installer : `python3 -m pip install --user python-socketio websocket-client`
+  - Utiliser `tools/run_client.py` (ou le snippet fourni dans la documentation).
+
+Notes production
+- Pour une vraie mise en production, réintroduire un reverse-proxy (nginx/Caddy/Traefik) pour TLS, header hardening et static caching.
+- Si vous scalez en plusieurs instances, ajoutez un backend pub/sub (Redis) pour Socket.IO (message broker) afin de synchroniser les sockets entre instances.
+
+Besoin d'aide ?
+- Si vous voulez que je pousse une configuration `nginx` prête pour la prod (TLS + WebSocket), je peux la générer.
+- Si vous préférez que je crée un workflow GitHub Actions pour build + tests, dites-le et je le configure.
+
+---
+README généré automatiquement — instructions en français pour un démarrage local rapide.
+

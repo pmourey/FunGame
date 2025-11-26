@@ -2,7 +2,14 @@ import React, { useEffect, useState, useRef } from 'react'
 import { io } from 'socket.io-client'
 import * as PIXI from 'pixi.js'
 
-const socket = io('http://localhost:5000')
+// Connect to the same origin so the client uses the frontend host (nginx) as proxy for socket.io.
+// Prefer websocket transport and fall back to polling if needed.
+const socket = io(window.location.origin, { path: '/socket.io', transports: ['websocket','polling'] })
+
+// diagnostic handlers for connection issues
+socket.on('connect_error', (err) => { console.error('socket connect_error', err) })
+socket.on('reconnect_error', (err) => { console.error('socket reconnect_error', err) })
+socket.on('disconnect', (reason) => { console.warn('socket disconnected', reason) })
 
 // Safe socket helpers: avoid calling .on/.off/.emit when socket is not a valid object
 function safeOn(ev, handler){
