@@ -27,7 +27,7 @@ docker compose up -d nginx
 sleep 3
 
 # health check loop (HTTPS via nginx)
-HEALTH_URL="https://philippe.mourey.com:60000/api"
+HEALTH_URL="https://philippe.mourey.com:6000/api"
 TIMEOUT=${TIMEOUT:-60}
 INTERVAL=${INTERVAL:-2}
 
@@ -52,9 +52,9 @@ done
 
 # verify PNA preflight (curl to nginx preflight)
 echo "Testing preflight (PNA) via nginx"
-PRE_URL="https://philippe.mourey.com:60000/socket.io/?EIO=4&transport=polling"
+PRE_URL="https://philippe.mourey.com:6000/socket.io/?EIO=4&transport=polling"
 PRE_OUT=$(curl -k -i -X OPTIONS "$PRE_URL" \
-  -H "Origin: http://philippe.mourey.com:60000" \
+  -H "Origin: http://philippe.mourey.com:6000" \
   -H "Access-Control-Request-Method: GET" \
   -H "Access-Control-Request-Headers: content-type" \
   -H "Access-Control-Request-Private-Network: true" || true)
@@ -62,4 +62,4 @@ PRE_OUT=$(curl -k -i -X OPTIONS "$PRE_URL" \
 echo "--- preflight response ---"
 echo "$PRE_OUT"
 
-echo "Done. Open https://philippe.mourey.com:60000 in your browser. If your browser shows a padlock, the site is served over HTTPS and websocket upgrades should work through /socket.io/."
+echo "Done. Open https://philippe.mourey.com:6000 in your browser. If your browser shows a padlock, the site is served over HTTPS and websocket upgrades should work through /socket.io/."
