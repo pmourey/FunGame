@@ -210,6 +210,15 @@ class GameState:
                 except Exception:
                     pass
                 self.log.append({'event': 'death', 'entity': target_id, 'time': time.time()})
+                # If a player killed another player, increment the killer's score
+                try:
+                    if target_id in self.players and actor.id in self.players:
+                        killer = self.players.get(actor.id)
+                        killer.score = getattr(killer, 'score', 0) + 1
+                        # log the kill event
+                        self.log.append({'event': 'kill', 'killer': actor.id, 'victim': target_id, 'time': time.time()})
+                except Exception:
+                    pass
             res = {'ok': True, 'action': 'attack', 'target': target_id, 'dmg': dmg, 'died': died, 'hit': hit, 'roll': roll}
             return res
 
