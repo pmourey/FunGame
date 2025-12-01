@@ -116,10 +116,35 @@ def register_socketio_handlers(socketio):
             emit('error', {'message': 'player not in game'})
             return
         result = game.process_action(player_id, action)
+        # If result indicates error, send it only to the caller and don't broadcast
+        sid = getattr(request, 'sid', None)
+        if isinstance(result, dict) and result.get('error'):
+            # map internal error codes to client-visible messages if desired
+            err_code = result.get('error')
+            # prefer a human-readable message if present
+            msg = {'error': err_code, 'message': result.get('message') or result.get('error')}
+            try:
+                if sid:
+                    emit('action_error', msg, to=sid)
+                else:
+                    emit('action_error', msg)
+            except Exception:
+                try:
+                    emit('error', msg)
+                except Exception:
+                    pass
+            # do not broadcast state in case of client error
+            print(f"rejected action from {player_id} in game {game_id}: {result}")
+            return
         # broadcast action result and full state snapshot
         print(f"action by {player_id} in game {game_id}: {action}, result: {result}")
-        emit('action_result', result, to=game_id)
-        emit('state_update', game.to_dict(), to=game_id)
+        # action_result/state_update emitted from GameState.process_action; do not duplicate here
+        # still emit an acknowledgement to the caller if desired
+        try:
+            if sid:
+                emit('action_ack', {'ok': True}, to=sid)
+        except Exception:
+            pass
 
     @socketio.on('disconnect')
     def on_disconnect():

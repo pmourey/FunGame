@@ -189,6 +189,12 @@ if __name__ == '__main__':
     app = create_app()
     # use threading async mode for development simplicity
     socketio = SocketIO(app, cors_allowed_origins='*', async_mode='threading')
+    # expose socketio instance for other modules
+    try:
+        import socketio_instance
+        socketio_instance.set_socketio(socketio)
+    except Exception:
+        pass
     register_socketio_handlers(socketio)
     # run with socketio.run for proper handling
     # extra log to confirm running and paths

@@ -46,11 +46,24 @@ export default function App(){
   const [joined, setJoined] = useState(false)
   const [hasStoredPlayer, setHasStoredPlayer] = useState(false)
   const [gamesExist, setGamesExist] = useState(false)
+  // notification messages (toasts) from server action_result / action_error
+  const [messages, setMessages] = useState([])
   const canvasRef = useRef(null)
   const appRef = useRef(null)
   const scaleRef = useRef(1)
   const animRef = useRef(null)
   const spriteClickRef = useRef(false)
+
+  function pushMessage(text, level='info', ttl = 4000){
+    const id = Date.now().toString(36) + Math.random().toString(36).slice(2,8)
+    const msg = {id, text, level}
+    setMessages(prev => [...prev, msg])
+    // auto remove
+    setTimeout(()=>{
+      setMessages(prev => prev.filter(m => m.id !== id))
+    }, ttl)
+    return id
+  }
 
   // helper to safely get the local stored playerId (available to component and effects)
   function getLocalPlayerId(){
@@ -121,23 +134,21 @@ export default function App(){
     })
     safeOn('connected', d=> console.log('server', d))
     safeOn('state_update', s=> setState(s))
-    // handle generic server errors (e.g. player already connected)
-    // Do NOT auto-clear stored player on error; instead surface to user and rely on retry/clear button.
-    safeOn('error', (err) => {
+    // display human messages sent by server after actions
+    const _onActionResult = (res) => {
       try{
-        const msg = err && (err.message || err.error || err.msg)
-        console.warn('socket error', err)
-        if(msg && String(msg).toLowerCase().includes('player already')){
-          // server indicates this playerId is already connected elsewhere — inform user
-          try{ alert('Le joueur stocké est déjà connecté ailleurs. Attente de la déconnexion ou utilisez "Effacer joueur stocké".') }catch(e){}
-        }
-        // if the server reports the game no longer exists, clear stored session so UI shows Join/Create
-        if(msg && String(msg).toLowerCase().includes('game not found')){
-          try{ sessionStorage.removeItem('gameId'); sessionStorage.removeItem('playerId') }catch(e){}
-          setHasStoredPlayer(false)
-        }
-      }catch(e){/* ignore */}
-    })
+        const text = res && (res.message || JSON.stringify(res))
+        if(text) pushMessage(String(text), 'info')
+      }catch(e){ console.warn('action_result handler failed', e) }
+    }
+    const _onActionError = (err) => {
+      try{
+        const text = err && (err.message || err.error || JSON.stringify(err))
+        if(text) pushMessage(String(text), 'error')
+      }catch(e){ console.warn('action_error handler failed', e) }
+    }
+    safeOn('action_result', _onActionResult)
+    safeOn('action_error', _onActionError)
 
     safeOn('joined', d=> {
       console.log('joined', d)
@@ -154,6 +165,8 @@ export default function App(){
       safeOff('connect')
       safeOff('connected')
       safeOff('state_update')
+      safeOff('action_result', _onActionResult)
+      safeOff('action_error', _onActionError)
       safeOff('joined')
     }
   }, [])
@@ -544,6 +557,14 @@ export default function App(){
       <div style={{marginTop:10}}>
         <strong>State (debug):</strong>
         <pre style={{whiteSpace:'pre-wrap', maxHeight:200, overflow:'auto'}}>{state? JSON.stringify(state,null,2): 'no state yet'}</pre>
+      </div>
+      {/* Toast messages */}
+      <div style={{position:'fixed', right:20, bottom:20, zIndex:9999}}>
+        {messages.map(m => (
+          <div key={m.id} style={{marginBottom:8, minWidth:280, padding:10, borderRadius:6, boxShadow:'0 2px 8px rgba(0,0,0,0.4)', backgroundColor: m.level === 'error' ? '#3b0b0b' : '#0b3b12', color:'#fff'}}>
+            <div style={{fontSize:14}}>{m.text}</div>
+          </div>
+        ))}
       </div>
     </div>
   )

@@ -3,6 +3,23 @@ import random
 import time
 from game.engine import Engine
 import math
+import socketio_instance as _si
+
+# Mapping d'erreurs => messages lisibles (français)
+ERROR_MESSAGES = {
+    'actor_not_found': "Acteur introuvable",
+    'actor_dead': "L'acteur est mort",
+    'occupied': "La case est occupée",
+    'target_not_found': "Cible introuvable",
+    'target_dead': "La cible est déjà morte",
+    'not_your_turn': "Ce n'est pas votre tour",
+    'not_dead': "L'acteur n'est pas mort",
+    'unknown_action': "Action inconnue",
+}
+
+
+def _err(code):
+    return {'error': code, 'message': ERROR_MESSAGES.get(code, code)}
 
 
 def _new_id():
@@ -165,30 +182,50 @@ class GameState:
         # Action processor: move / attack / end_turn / respawn
         actor = self.players.get(player_id) or self.monsters.get(player_id)
         if not actor:
-            return {'error': 'actor not found'}
+            return _err('actor_not_found')
         # allow 'respawn'/'revive' actions even if actor is dead; otherwise dead actors cannot act
         typ = action.get('type')
+        # Enforce turn order: if a turn queue exists (or current_turn is set), only the entity whose id matches
+        # current_turn may perform actions (except respawn/revive which are allowed anytime)
+        if typ not in ('respawn', 'revive') and (self.current_turn is not None or self.turn_queue):
+            if actor.id != self.current_turn:
+                return _err('not_your_turn')
         if getattr(actor, 'hp', 0) <= 0 and typ not in ('respawn', 'revive'):
-            return {'error': 'actor_dead'}
+            return _err('actor_dead')
         if typ == 'move':
             x = int(action.get('x', actor.position['x']))
             y = int(action.get('y', actor.position['y']))
             # don't allow moving onto occupied tile (alive entities)
             occupied = any((p.position.get('x') == x and p.position.get('y') == y) for p in list(self.players.values()) + list(self.monsters.values()) if p.id != actor.id and getattr(p, 'hp', 1) > 0)
             if occupied:
-                return {'error': 'occupied'}
+                return _err('occupied')
             actor.position = {'x': x, 'y': y}
-            self.log.append({'event': 'move', 'actor': player_id, 'pos': actor.position, 'time': time.time()})
-            return {'ok': True, 'action': 'move', 'pos': actor.position}
+            # log with readable name and id
+            self.log.append({'event': 'move', 'actor': actor.name, 'actor_id': actor.id, 'pos': actor.position, 'time': time.time()})
+            res = {'ok': True, 'action': 'move', 'pos': actor.position, 'message': f"Déplacé en {actor.position['x']},{actor.position['y']}"}
+            # advance the turn after a move so player cannot both move and attack in same turn
+            try:
+                next_entity = self.engine.advance_turn()
+                res['next'] = next_entity
+            except Exception:
+                pass
+            # server-side emit via socketio if available
+            try:
+                if _si and hasattr(_si, 'emit_event'):
+                    _si.emit_event('action_result', res, to=self.id)
+                    _si.emit_event('state_update', self.to_dict(), to=self.id)
+            except Exception:
+                pass
+            return res
 
         elif typ == 'attack':
             target_id = action.get('targetId')
             target = self.players.get(target_id) or self.monsters.get(target_id)
             if not target:
-                return {'error': 'target_not_found'}
+                return _err('target_not_found')
             # cannot attack dead targets
             if getattr(target, 'hp', 1) <= 0:
-                return {'error': 'target_dead'}
+                return _err('target_dead')
             # perform attack roll (1-20) and damage (1-6) on hit
             dx = actor.position.get('x', 0) - target.position.get('x', 0)
             dy = actor.position.get('y', 0) - target.position.get('y', 0)
@@ -199,7 +236,8 @@ class GameState:
             if hit:
                 dmg = random.randint(1, 6)
                 target.hp -= dmg
-            self.log.append({'event': 'attack', 'actor': player_id, 'target': target_id, 'dist': dist, 'roll': roll, 'hit': hit, 'dmg': dmg, 'time': time.time()})
+            # log attack with readable names and ids
+            self.log.append({'event': 'attack', 'actor': actor.name, 'actor_id': actor.id, 'target': target.name, 'target_id': target.id, 'dist': dist, 'roll': roll, 'hit': hit, 'dmg': dmg, 'time': time.time()})
             died = False
             if hit and target.hp <= 0:
                 target.hp = 0
@@ -209,23 +247,40 @@ class GameState:
                     self.engine.remove_entity(target.id)
                 except Exception:
                     pass
-                self.log.append({'event': 'death', 'entity': target_id, 'time': time.time()})
+                # log death with readable name
+                self.log.append({'event': 'death', 'entity': target.name, 'entity_id': target.id, 'time': time.time()})
                 # If a player killed another player, increment the killer's score
                 try:
                     if target_id in self.players and actor.id in self.players:
                         killer = self.players.get(actor.id)
                         killer.score = getattr(killer, 'score', 0) + 1
-                        # log the kill event
-                        self.log.append({'event': 'kill', 'killer': actor.id, 'victim': target_id, 'time': time.time()})
+                        # log the kill event with names
+                        self.log.append({'event': 'kill', 'killer': actor.name, 'killer_id': actor.id, 'victim': target.name, 'victim_id': target.id, 'time': time.time()})
                 except Exception:
                     pass
-            res = {'ok': True, 'action': 'attack', 'target': target_id, 'dmg': dmg, 'died': died, 'hit': hit, 'roll': roll}
+            msg = f"Attaque {'réussie' if hit else 'manquée'}"
+            if hit:
+                msg += f" - dégâts: {dmg}"
+            res = {'ok': True, 'action': 'attack', 'target': target_id, 'dmg': dmg, 'died': died, 'hit': hit, 'roll': roll, 'message': msg}
+            # auto-advance turn after attack so opponents (including bots) get chance to act
+            try:
+                next_entity = self.engine.advance_turn()
+                res['next'] = next_entity
+            except Exception:
+                pass
+            # emit via socketio if available
+            try:
+                if _si and hasattr(_si, 'emit_event'):
+                    _si.emit_event('action_result', res, to=self.id)
+                    _si.emit_event('state_update', self.to_dict(), to=self.id)
+            except Exception:
+                pass
             return res
 
         elif typ == 'respawn' or typ == 'revive':
             # revive the actor if dead
             if getattr(actor, 'hp', 1) > 0:
-                return {'error': 'not_dead'}
+                return _err('not_dead')
             actor.hp = getattr(actor, 'max_hp', 10)
             # place on free tile
             def is_occupied(x, y):
@@ -257,7 +312,7 @@ class GameState:
                         actor.position = {'x': 0, 'y': 0}
                 else:
                     actor.position = {'x': 0, 'y': 0}
-            self.log.append({'event': 'respawn', 'player': actor.id, 'time': time.time()})
+            self.log.append({'event': 'respawn', 'player': actor.name, 'player_id': actor.id, 'time': time.time()})
             # ensure actor is in turn queue so they become active again
             try:
                 if actor.id not in self.turn_queue:
@@ -266,11 +321,11 @@ class GameState:
                         self.current_turn = actor.id
             except Exception:
                 pass
-            return {'ok': True, 'action': 'respawn', 'pos': actor.position}
+            return {'ok': True, 'action': 'respawn', 'pos': actor.position, 'message': 'Réapparu'}
 
         elif typ == 'end_turn':
             next_entity = self.engine.advance_turn()
             return {'ok': True, 'action': 'end_turn', 'next': next_entity}
 
         else:
-            return {'error': 'unknown action'}
+            return _err('unknown_action')
